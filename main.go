@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/ebitengine/oto/v3"
@@ -52,6 +53,7 @@ type SynthEngine struct {
 	OutputChannel *RingBuffer
 	OutputReader  *RingReader
 	Oscs          []*Osc
+	OutputSample  *float64
 }
 
 func NewSynthEngine() (*SynthEngine, error) {
@@ -59,90 +61,61 @@ func NewSynthEngine() (*SynthEngine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SynthEngine{
+	var outputSample float64 = 0
+	result := &SynthEngine{
 		SampleRate:    48000.0,
 		GlobalTime:    0,
 		OutputChannel: rb,
 		OutputReader:  &RingReader{RB: rb},
-		Oscs: []*Osc{
-			&Osc{
-				Type:      OSC_TYPE_SIN,
-				Frequency: 440.0,
-				Amplitude: 0.5,
-			},
-			&Osc{
-				Type:      OSC_TYPE_SAW,
-				Frequency: 440.0,
-				Amplitude: 0.1,
-			},
-		},
-	}, nil
+		Oscs:          []*Osc{},
+		OutputSample:  &outputSample,
+	}
+
+	a := result.AddOsc(&Osc{
+		Type:      OSC_TYPE_SIN,
+		Frequency: 440.0,
+		Amplitude: 0.5,
+	})
+
+	result.AddOsc(&Osc{
+		Type:      OSC_TYPE_SIN,
+		Frequency: 2.0,
+		Amplitude: 0.01,
+		Output:    &a.Frequency,
+	})
+
+	return result, nil
+}
+func (se *SynthEngine) AddOsc(osc *Osc) *Osc {
+	if slices.Contains(se.Oscs, osc) {
+		return osc
+	}
+	if osc.Output == nil {
+		osc.Output = se.OutputSample
+	}
+	se.Oscs = append(se.Oscs, osc)
+	return osc
 }
 
 const SYNTH_BLOCK_SIZE = 1024
 const SYNTH_BLOCK_LOW = 256
-const SYNTH_WORKER_SLEEP_MS = 5
-
-type OscType int
-
-const (
-	OSC_TYPE_SIN OscType = iota
-	OSC_TYPE_COS
-	OSC_TYPE_SAW
-	OSC_TYPE_SQUARE
-	OSC_TYPE_TRIANGLE
-)
-
-type Osc struct {
-	Frequency float64
-	Amplitude float64
-	Phase     float64
-	Type      OscType
-}
+const SYNTH_WORKER_SLEEP_MS = 1
 
 const Tau float64 = math.Pi * 2
-
-func (osc *Osc) Sample64(sampleRate float64) float64 {
-
-	var sample float64
-
-	switch osc.Type {
-	case OSC_TYPE_SIN:
-		sample = math.Sin(osc.Phase)
-
-	case OSC_TYPE_SAW:
-		sample = osc.Phase/math.Pi - 1
-
-	case OSC_TYPE_SQUARE:
-		if osc.Phase < math.Pi {
-			sample = 1
-		} else {
-			sample = -1
-		}
-	}
-
-	osc.Phase += Tau * osc.Frequency / sampleRate
-	if osc.Phase >= Tau {
-		osc.Phase -= Tau
-	}
-
-	return sample * osc.Amplitude
-}
 
 func (se *SynthEngine) Generate(block []float32) int {
 
 	phase := se.GlobalTime
 
 	blockSize := len(block)
-	var sample64 float64
-	for i := 0; i < blockSize; i++ {
-		sample64 = 0
 
+	for i := 0; i < blockSize; i++ {
+		*se.OutputSample = 0
 		for _, osc := range se.Oscs {
-			sample64 += osc.Sample64(se.SampleRate)
+			osc.Sample64(se.SampleRate, true, osc.Output)
 		}
 
-		block[i] = float32(sample64)
+		block[i] = float32(*se.OutputSample)
 	}
 
 	se.GlobalTime = phase
@@ -150,7 +123,6 @@ func (se *SynthEngine) Generate(block []float32) int {
 }
 
 func (se *SynthEngine) Worker() {
-
 	var block [SYNTH_BLOCK_SIZE]float32
 
 	for {
