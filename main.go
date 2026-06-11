@@ -9,6 +9,28 @@ import (
 	"github.com/ebitengine/oto/v3"
 )
 
+func NoteFreq(note Note, octave int) float64 {
+	midi := (octave+1)*12 + int(note)
+	return 440.0 * math.Pow(2, float64(midi-69)/12.0)
+}
+
+type Note int
+
+const (
+	NoteC Note = iota
+	NoteCs
+	NoteD
+	NoteDs
+	NoteE
+	NoteF
+	NoteFs
+	NoteG
+	NoteGs
+	NoteA
+	NoteAs
+	NoteB
+)
+
 func main() {
 	//create our synth engine
 	se, err := NewSynthEngine()
@@ -34,6 +56,42 @@ func main() {
 	//connect driver to synth engine output
 	otoPlayer := ctx.NewPlayer(se.OutputReader)
 	otoPlayer.Play()
+
+	se.AddOsc(&Osc{
+		Type:      OSC_TYPE_SIN,
+		Frequency: NoteFreq(NoteA, 4),
+		Amplitude: 0.1,
+	})
+	se.AddOsc(&Osc{
+		Type:      OSC_TYPE_SIN,
+		Frequency: NoteFreq(NoteC, 4),
+		Amplitude: 0.1,
+	})
+	se.AddOsc(&Osc{
+		Type:      OSC_TYPE_SAW,
+		Frequency: NoteFreq(NoteE, 4),
+		Amplitude: 0.1,
+	})
+	se.AddOsc(&Osc{
+		Type:      OSC_TYPE_SAW,
+		Frequency: NoteFreq(NoteG, 4),
+		Amplitude: 0.1,
+	})
+	se.AddOsc(&Osc{
+		Type:      OSC_TYPE_SAW,
+		Frequency: NoteFreq(NoteA, 5),
+		Amplitude: 0.1,
+	})
+	se.AddOsc(&Osc{
+		Type:      OSC_TYPE_SAW,
+		Frequency: NoteFreq(NoteD, 5),
+		Amplitude: 0.1,
+	})
+	se.AddOsc(&Osc{
+		Type:      OSC_TYPE_SAW,
+		Frequency: NoteFreq(NoteFs, 5),
+		Amplitude: 0.1,
+	})
 
 	//start our synth engine
 	go se.Worker()
@@ -70,19 +128,6 @@ func NewSynthEngine() (*SynthEngine, error) {
 		Oscs:          []*Osc{},
 		OutputSample:  &outputSample,
 	}
-
-	a := result.AddOsc(&Osc{
-		Type:      OSC_TYPE_SIN,
-		Frequency: 440.0,
-		Amplitude: 0.5,
-	})
-
-	result.AddOsc(&Osc{
-		Type:      OSC_TYPE_SIN,
-		Frequency: 2.0,
-		Amplitude: 0.01,
-		Output:    &a.Frequency,
-	})
 
 	return result, nil
 }
